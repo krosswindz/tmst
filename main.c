@@ -10,7 +10,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include "log.h"
+#include "logger.h"
 
 #define CONF_LINE_LEN 512
 
@@ -161,7 +161,16 @@ main (int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	print_config ();
+	if (logger_init (levels) != 0) {
+		fprintf (log_fp, "ERROR: unable initialize logger.\n");
+		fflush (log_fp);
+		if (log_fp != stdout) {
+			fsync (fileno (log_fp));
+			fclose (log_fp);
+		}
+
+		return EXIT_FAILURE;
+	}
 
 	// Sync and close the log file.
 	fflush (log_fp);
@@ -240,14 +249,14 @@ parse_config_file (char *file)
 static void
 print_config (void)
 {
-	printf ("configured parameters:\n");
-	printf ("database host: %s\n", host);
-	printf ("database name: %s\n", name);
-	printf ("database passwd: %s\n", passwd);
-	printf ("database user: %s\n", user);
-	printf ("bind ip: %s\n", ip);
-	printf ("bind port: %s\n", port);
-	printf ("log level: %s\n", levels);
+	logger (LOG_DBG, "configured parameters:\n");
+	logger (LOG_DBG, "database host: %s\n", host);
+	logger (LOG_DBG, "database name: %s\n", name);
+	logger (LOG_DBG, "database passwd: %s\n", passwd);
+	logger (LOG_DBG, "database user: %s\n", user);
+	logger (LOG_DBG, "bind ip: %s\n", ip);
+	logger (LOG_DBG, "bind port: %s\n", port);
+	logger (LOG_DBG, "log level: %s\n", levels);
 
 	return;
 }
