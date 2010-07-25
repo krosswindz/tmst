@@ -3,7 +3,7 @@
 CC=gcc
 CFLAGS=-g -Wall -Wextra -O3
 
-OBJS=main.o
+OBJS=main.o tcp.o
 TARGET=tmst
 
 .c.o:

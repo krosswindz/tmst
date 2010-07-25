@@ -8,6 +8,9 @@
 
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 enum LOG_LEVELS {
 	LOG_ERR = 1,
@@ -18,6 +21,11 @@ enum LOG_LEVELS {
 
 extern FILE *log_fp;
 extern uint8_t log_level;
+
+#define logger_unimplemented() do { \
+	logger (LOG_ERR, "UNIMPLEMENTED: %s_%d, %s\n", __FILE__, __LINE__, \
+			__FUNCTION__); \
+} while (0)
 
 static inline void
 logger (uint8_t level, char *args, ...)

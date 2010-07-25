@@ -11,11 +11,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "logger.h"
+#include "tcp.h"
 
 #define CONF_LINE_LEN 512
 
 static int parse_config_file (char *);
 static void print_config (void);
+static void signal_handler (int);
 static void usage (char *);
 static inline int check_valid_config (void);
 static inline int set_defaults (void);
@@ -24,14 +26,15 @@ static inline char *strip_whitespace (char *);
 
 FILE *log_fp = NULL;
 uint8_t log_level = 1;
+char *host = NULL;
+char *name = NULL;
+char *passwd = NULL;
+char *user = NULL;
+char *ip = NULL;
+char *port = NULL;
+char *levels = NULL;
 
-static char *host = NULL;
-static char *name = NULL;
-static char *passwd = NULL;
-static char *user = NULL;
-static char *ip = NULL;
-static char *port = NULL;
-static char *levels = NULL;
+static volatile int terminate = 0;
 
 int
 main (int argc, char *argv[])
@@ -96,6 +99,10 @@ main (int argc, char *argv[])
 		fclose (stderr);
 		signal (SIGCHLD, SIG_IGN);
 		signal (SIGPIPE, SIG_IGN);
+		signal (SIGHUP, signal_handler);
+		signal (SIGINT, signal_handler);
+		signal (SIGQUIT, signal_handler);
+		signal (SIGTERM, signal_handler);
 		if (logfile == NULL) {
 			logfile = (char *) malloc (sizeof (char)
 					* (strlen (argv[0]) + 5));
@@ -171,6 +178,14 @@ main (int argc, char *argv[])
 
 		return EXIT_FAILURE;
 	}
+
+	if (tcp_init () != 0) {
+		logger (LOG_ERR, "ERROR: tcp_init failed.\n");
+		return EXIT_FAILURE;
+	}
+
+	// Clean up.
+	tcp_fin ();
 
 	// Sync and close the log file.
 	fflush (log_fp);
@@ -257,6 +272,31 @@ print_config (void)
 	logger (LOG_DBG, "bind ip: %s\n", ip);
 	logger (LOG_DBG, "bind port: %s\n", port);
 	logger (LOG_DBG, "log level: %s\n", levels);
+
+	return;
+}
+
+static void
+signal_handler (int signo)
+{
+	switch (signo) {
+		case SIGHUP:
+		case SIGQUIT:
+			logger (LOG_INFO, "INFO: received %s, ignoring.\n",
+					strsignal (signo));
+			break;
+
+		case SIGINT:
+		case SIGTERM:
+			logger (LOG_INFO, "INFO: received %s, terminating.\n",
+					strsignal (signo));
+			terminate = 1;
+			break;
+
+		default:
+			logger (LOG_ERR, "ERROR: received %s, unhandled.\n",
+					strsignal (signo));
+	}
 
 	return;
 }
