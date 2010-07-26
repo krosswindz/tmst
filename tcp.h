@@ -6,7 +6,7 @@
 #ifndef __TCP_H__
 #define __TCP_H__
 
-int tcp_init (void);
 void tcp_fin (void);
+int tcp_init (void);
 
 #endif /* __TCP_H__ */

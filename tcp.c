@@ -22,6 +22,8 @@ tcp_fin (void)
 	if (serv_sock != -1)
 		close (serv_sock);
 
+	serv_sock = -1;
+
 	return;
 }
 

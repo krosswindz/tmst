@@ -1,6 +1,9 @@
 # exclude object files
 *.o
 
+# exclude rsynch.sh
+rsync.sh
+
 # exclude vim swap files
 *.sw?
 

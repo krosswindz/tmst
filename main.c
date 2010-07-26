@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "logger.h"
+#include "sql.h"
 #include "tcp.h"
 
 #define CONF_LINE_LEN 512
@@ -181,10 +182,28 @@ main (int argc, char *argv[])
 
 	if (tcp_init () != 0) {
 		logger (LOG_ERR, "ERROR: tcp_init failed.\n");
+		fflush (log_fp);
+		if (log_fp != stdout) {
+			fsync (fileno (log_fp));
+			fclose (log_fp);
+		}
+
+		return EXIT_FAILURE;
+	}
+
+	if (sql_init () != 0) {
+		logger (LOG_ERR, "ERROR: sql_init failed.\n");
+		fflush (log_fp);
+		if (log_fp != stdout) {
+			fsync (fileno (log_fp));
+			fclose (log_fp);
+		}
+
 		return EXIT_FAILURE;
 	}
 
 	// Clean up.
+	sql_fin ();
 	tcp_fin ();
 
 	// Sync and close the log file.
