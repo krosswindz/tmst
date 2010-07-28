@@ -22,7 +22,12 @@ enum LOG_LEVELS {
 extern FILE *log_fp;
 extern uint8_t log_level;
 
-#define logger_unimplemented() do { \
+#define debug(level, format, args...) do { \
+	logger (level, "%s_%d, %s: " format, __FILE__, __LINE__, \
+			__FUNCTION__, ##args); \
+} while (0);
+
+#define debug_unimplemented() do { \
 	logger (LOG_ERR, "UNIMPLEMENTED: %s_%d, %s\n", __FILE__, __LINE__, \
 			__FUNCTION__); \
 } while (0)

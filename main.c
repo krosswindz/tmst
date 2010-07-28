@@ -10,23 +10,26 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "http.h"
 #include "logger.h"
 #include "sql.h"
-#include "tcp.h"
 
 #define CONF_LINE_LEN 512
 
 static int parse_config_file (char *);
-static void print_config (void);
 static void signal_handler (int);
 static void usage (char *);
 static inline int check_valid_config (void);
 static inline int set_defaults (void);
 static inline char *strip_comments (char *);
 static inline char *strip_whitespace (char *);
+#ifdef DEBUG
+static void print_config (void);
+#endif /* DEBUG */
 
 FILE *log_fp = NULL;
 uint8_t log_level = 1;
+unsigned int max_thrds = 32;
 char *host = NULL;
 char *name = NULL;
 char *passwd = NULL;
@@ -52,6 +55,7 @@ main (int argc, char *argv[])
 		{.name = NULL, .has_arg = 0, .flag = NULL, .val = 0}
 	};
 	pid_t pid;
+	int retval = EXIT_SUCCESS;
 
 	while (c != EOF) {
 		c = getopt_long (argc, argv, "c:fhl:", opts, NULL);
@@ -123,9 +127,6 @@ main (int argc, char *argv[])
 		}
 	}
 
-	if (logfile != NULL)
-		free (logfile);
-
 	if (conffile == NULL) {
 		conffile = (char *) malloc (sizeof (char)
 				* (strlen (argv[0]) + 6));
@@ -135,76 +136,48 @@ main (int argc, char *argv[])
 
 	if (parse_config_file (conffile) != 0) {
 		fprintf (log_fp, "ERROR: parsing config file failed.\n");
-		fflush (log_fp);
-		if (log_fp != stdout) {
-			fsync (fileno (log_fp));
-			fclose (log_fp);
-		}
-
-		return EXIT_FAILURE;
+		retval = EXIT_FAILURE;
+		goto cleanup;
 	}
-
-	if (conffile != NULL)
-		free (conffile);
 
 	if (set_defaults () != 0) {
 		fprintf (log_fp, "ERROR: unable to set defaults.\n");
-		fflush (log_fp);
-		if (log_fp != stdout) {
-			fsync (fileno (log_fp));
-			fclose (log_fp);
-		}
-
-		return EXIT_FAILURE;
+		retval = EXIT_FAILURE;
+		goto cleanup;
 	}
 
 	if (check_valid_config () != 0) {
 		fprintf (log_fp, "ERROR: bad config file.\n");
-		fflush (log_fp);
-		if (log_fp != stdout) {
-			fsync (fileno (log_fp));
-			fclose (log_fp);
-		}
-
-		return EXIT_FAILURE;
+		retval = EXIT_FAILURE;
+		goto cleanup;
 	}
 
 	if (logger_init (levels) != 0) {
 		fprintf (log_fp, "ERROR: unable initialize logger.\n");
-		fflush (log_fp);
-		if (log_fp != stdout) {
-			fsync (fileno (log_fp));
-			fclose (log_fp);
-		}
-
-		return EXIT_FAILURE;
+		retval = EXIT_FAILURE;
+		goto cleanup;
 	}
 
-	if (tcp_init () != 0) {
-		logger (LOG_ERR, "ERROR: tcp_init failed.\n");
-		fflush (log_fp);
-		if (log_fp != stdout) {
-			fsync (fileno (log_fp));
-			fclose (log_fp);
-		}
-
-		return EXIT_FAILURE;
+#ifdef DEBUG
+	print_config ();
+#endif /* DEBUG */
+	if (http_init () != 0) {
+		logger (LOG_ERR, "ERROR: http_init failed.\n");
+		retval = EXIT_FAILURE;
+		goto cleanup;
 	}
 
 	if (sql_init () != 0) {
 		logger (LOG_ERR, "ERROR: sql_init failed.\n");
-		fflush (log_fp);
-		if (log_fp != stdout) {
-			fsync (fileno (log_fp));
-			fclose (log_fp);
-		}
-
-		return EXIT_FAILURE;
+		retval = EXIT_FAILURE;
+		goto cleanup;
 	}
 
+	while (terminate == 0);
+cleanup:
 	// Clean up.
 	sql_fin ();
-	tcp_fin ();
+	http_fin ();
 
 	// Sync and close the log file.
 	fflush (log_fp);
@@ -213,7 +186,31 @@ main (int argc, char *argv[])
 		fclose (log_fp);
 	}
 
-	return EXIT_SUCCESS;
+	if (logfile != NULL)
+		free (logfile);
+
+	if (conffile != NULL)
+		free (conffile);
+
+	if (host != NULL)
+		free (host);
+
+	if (name != NULL)
+		free (name);
+
+	if (passwd != NULL)
+		free (passwd);
+
+	if (user != NULL)
+		free (user);
+
+	if (ip != NULL)
+		free (ip);
+
+	if (port != NULL)
+		free (port);
+
+	return retval;
 }
 
 static int
@@ -237,14 +234,9 @@ parse_config_file (char *file)
 			continue;
 
 		opt = strtok (buf, "=");
-		val = strtok (NULL, "");
-		if (strcmp (opt, "listen_ip") == 0) {
-			ip = strdup (val);
-			continue;
-		}
-
-		if (strcmp (opt, "listen_port") == 0) {
-			port = strdup (val);
+		val = strtok (NULL, "=");
+		if (strcmp (opt, "max_threads") == 0) {
+			max_thrds = (unsigned int) atoi ((const char *) val);
 			continue;
 		}
 
@@ -253,8 +245,8 @@ parse_config_file (char *file)
 			continue;
 		}
 
-		if (strcmp (opt, "db_user") == 0) {
-			user = strdup (val);
+		if (strcmp (opt, "db_name") == 0) {
+			name = strdup (val);
 			continue;
 		}
 
@@ -263,8 +255,18 @@ parse_config_file (char *file)
 			continue;
 		}
 
-		if (strcmp (opt, "db_name") == 0) {
-			name = strdup (val);
+		if (strcmp (opt, "db_user") == 0) {
+			user = strdup (val);
+			continue;
+		}
+
+		if (strcmp (opt, "listen_ip") == 0) {
+			ip = strdup (val);
+			continue;
+		}
+
+		if (strcmp (opt, "listen_port") == 0) {
+			port = strdup (val);
 			continue;
 		}
 
@@ -281,33 +283,18 @@ parse_config_file (char *file)
 }
 
 static void
-print_config (void)
-{
-	logger (LOG_DBG, "configured parameters:\n");
-	logger (LOG_DBG, "database host: %s\n", host);
-	logger (LOG_DBG, "database name: %s\n", name);
-	logger (LOG_DBG, "database passwd: %s\n", passwd);
-	logger (LOG_DBG, "database user: %s\n", user);
-	logger (LOG_DBG, "bind ip: %s\n", ip);
-	logger (LOG_DBG, "bind port: %s\n", port);
-	logger (LOG_DBG, "log level: %s\n", levels);
-
-	return;
-}
-
-static void
 signal_handler (int signo)
 {
 	switch (signo) {
 		case SIGHUP:
 		case SIGQUIT:
-			logger (LOG_INFO, "INFO: received %s, ignoring.\n",
+			logger (LOG_DBG, "INFO: received %s, ignoring.\n",
 					strsignal (signo));
 			break;
 
 		case SIGINT:
 		case SIGTERM:
-			logger (LOG_INFO, "INFO: received %s, terminating.\n",
+			logger (LOG_DBG, "INFO: received %s, terminating.\n",
 					strsignal (signo));
 			terminate = 1;
 			break;
@@ -451,3 +438,21 @@ strip_whitespace (char *str)
 
 	return str;
 }
+
+#ifdef DEBUG
+static void
+print_config (void)
+{
+	logger (LOG_DBG, "configured parameters:\n");
+	logger (LOG_DBG, "max threads: %u\n", max_thrds);
+	logger (LOG_DBG, "database host: %s\n", host);
+	logger (LOG_DBG, "database name: %s\n", name);
+	logger (LOG_DBG, "database passwd: %s\n", passwd);
+	logger (LOG_DBG, "database user: %s\n", user);
+	logger (LOG_DBG, "bind ip: %s\n", ip);
+	logger (LOG_DBG, "bind port: %s\n", port);
+	logger (LOG_DBG, "log level: %s\n", levels);
+
+	return;
+}
+#endif /* DEBUG */

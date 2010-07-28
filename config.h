@@ -6,6 +6,7 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
+extern unsigned int max_thrds;
 extern char *host;
 extern char *name;
 extern char *passwd;

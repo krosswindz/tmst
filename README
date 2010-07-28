@@ -1,4 +1,12 @@
 Copyright (c) 2009 Kross Windz <krosswindz@gmail.com>.
 All rights reserved.
 
-TheMediaSite BitTorrent tracker.
+TheMediaSite BitTorrent tracker
+============ ========== =======
+This minimalistic BitTorrent tracker developed to be used for TheMediaSite.
+
+Reference
+=========
+[1] http://wiki.theory.org/BitTorrentSpecification
+[2] http://lists.ibiblio.org/mailman/listinfo/bittorrent
+[3] http://www.gnu.org/software/libmicrohttpd/
