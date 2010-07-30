@@ -6,8 +6,8 @@
 #ifndef __LOGGER_H__
 #define __LOGGER_H__
 
+#include <inttypes.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

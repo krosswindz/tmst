@@ -158,9 +158,6 @@ main (int argc, char *argv[])
 		goto cleanup;
 	}
 
-#ifdef DEBUG
-	print_config ();
-#endif /* DEBUG */
 	if (http_init () != 0) {
 		logger (LOG_ERR, "ERROR: http_init failed.\n");
 		retval = EXIT_FAILURE;

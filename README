@@ -7,6 +7,7 @@ This minimalistic BitTorrent tracker developed to be used for TheMediaSite.
 
 Reference
 =========
-[1] http://wiki.theory.org/BitTorrentSpecification
-[2] http://lists.ibiblio.org/mailman/listinfo/bittorrent
-[3] http://www.gnu.org/software/libmicrohttpd/
+[1] http://wiki.theory.org/Main_Page
+[2] http://wiki.theory.org/BitTorrentSpecification
+[3] http://lists.ibiblio.org/mailman/listinfo/bittorrent
+[4] http://www.gnu.org/software/libmicrohttpd/

@@ -4,9 +4,9 @@
  */
 
 #include <arpa/inet.h>
+#include <inttypes.h>
 #include <netinet/in.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -21,7 +21,7 @@ static int process_request (void *, struct MHD_Connection *, const char *,
 static inline announce_info_t *get_announce_info (struct MHD_Connection *);
 static inline uint8_t parse_event (const char *);
 #ifdef DEBUG
-static int get_argument (void *, enum MHD_ValueKind, const char *,
+static int key_val_iterator (void *, enum MHD_ValueKind, const char *,
 		const char *);
 static inline void print_announce_info (announce_info_t *);
 static inline void print_hex (char *str);
@@ -68,12 +68,16 @@ process_request (void *cls, struct MHD_Connection *conn, const char *url,
 		size_t *data_size, void **con_cls)
 {
 	announce_info_t *ai = NULL;
-	char *info_hash, *pkey, *req, *ret, *str, *tmp;
+	const char *buf;
+	char *info_hash = NULL;
+	char *pkey, *req, *ret, *str, *tmp;
+	struct MHD_Response *response;
+	int ret_val = MHD_YES;
 
 #ifdef DEBUG
 	debug (LOG_DBG, "url: %s\n", url);
-	MHD_get_connection_values (conn, MHD_GET_ARGUMENT_KIND, get_argument,
-			NULL);
+	MHD_get_connection_values (conn, MHD_GET_ARGUMENT_KIND, 
+			key_val_iterator, NULL);
 #endif /* DEBUG */
 	str = strdup (url);
 	if (str == NULL) {
@@ -82,31 +86,77 @@ process_request (void *cls, struct MHD_Connection *conn, const char *url,
 	}
 
 	tmp = str;
-#if 0
 	pkey = strtok (tmp, "/");
 	req = strtok (NULL, "");
-	debug (LOG_DBG, "pkey: %s, req: %s\n", pkey, req);
-#endif
-	req = strtok (tmp, "/");
-	pkey = strtok (NULL, "");
 	ret = NULL;
-	if (strcmp (req, "announce") == 0) {
+	if (req == NULL) {
+		ret = tracker_handle_request (pkey, req, ai, info_hash);
+	} else if (strcmp (req, "announce") == 0) {
 		ai = get_announce_info (conn);
-		if (ai == NULL)
-			return MHD_NO;
-
-		debug_unimplemented ();
-		return MHD_NO;
+		ret = tracker_handle_request (pkey, req, ai, info_hash);
 	} else if (strcmp (req, "scrape") == 0) {
-		info_hash = strdup (MHD_lookup_connection_value (conn,
-					MHD_GET_ARGUMENT_KIND, "info_hash"));
-		debug_unimplemented ();
-		return MHD_NO;
+		buf = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
+				"info_hash");
+		if (buf != NULL)
+			info_hash = strdup (buf);
+
+		ret = tracker_handle_request (pkey, req, ai, info_hash);
+	} else {
+		ret = tracker_handle_request (pkey, req, ai, info_hash);
+		debug (LOG_DBG, "pkey: %s, req: %s\n", pkey, req);
 	}
 
 	free (str);
-	debug_unimplemented ();
-	return MHD_NO;
+	response = MHD_create_response_from_data (strlen (ret), (void *) ret,
+			MHD_YES, MHD_NO);
+	if (response == NULL) {
+		free (ret);
+		debug (LOG_ERR, "ERROR: Unable to create MHD response.\n");
+		return MHD_NO;
+	}
+
+	if (MHD_add_response_header (response, MHD_HTTP_HEADER_CONTENT_TYPE,
+				"text/plain") == MHD_NO) {
+		debug (LOG_ERR, "ERROR: Unable to set Conntent-Type "
+				"text/plain.");
+		MHD_destroy_response (response);
+		free (ret);
+		return MHD_NO;
+	}
+
+	if (MHD_add_response_header (response, MHD_HTTP_HEADER_PRAGMA,
+				"no-cache") == MHD_NO) {
+		debug (LOG_ERR, "ERROR: Unable to set Pragma no-cache.");
+		MHD_destroy_response (response);
+		free (ret);
+		return MHD_NO;
+	}
+
+	if (MHD_add_response_header (response, "Keep-Alive", "timeout=15, "
+				"max=100") == MHD_NO) {
+		debug (LOG_ERR, "ERROR: Unable to set Keep-Alive timeout=15 "
+				"max=100.");
+		MHD_destroy_response (response);
+		free (ret);
+		return MHD_NO;
+	}
+
+	if (MHD_add_response_header (response, MHD_HTTP_HEADER_CONNECTION,
+				"Keep-Alive") == MHD_NO) {
+		debug (LOG_ERR, "ERROR: Unable to set Connection Keep-Alive.");
+		MHD_destroy_response (response);
+		free (ret);
+		return MHD_NO;
+	}
+
+#ifdef DEBUG
+	debug (LOG_DBG, "ret: %s\n", ret);
+	MHD_get_response_headers (response, key_val_iterator, NULL);
+#endif /* DEBUG */
+	ret_val = MHD_queue_response (conn, MHD_HTTP_OK, response);
+	MHD_destroy_response (response);
+
+	return ret_val;
 }
 
 static inline announce_info_t *
@@ -152,22 +202,22 @@ get_announce_info (struct MHD_Connection *conn)
 	tmp = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
 			"uploaded");
 	if (tmp != NULL)
-		ai->uploaded = (uint64_t) atoll (tmp);
+		ai->uploaded = (int64_t) atoll (tmp);
 
 	tmp = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
 			"downloaded");
 	if (tmp != NULL)
-		ai->downloaded = (uint64_t) atoll (tmp);
+		ai->downloaded = (int64_t) atoll (tmp);
 
 	tmp = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
 			"uploaded");
 	if (tmp != NULL)
-		ai->left = (uint64_t) atoll (tmp);
+		ai->left = (int64_t) atoll (tmp);
 
 	tmp = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
 			"corrupt");
 	if (tmp != NULL)
-		ai->corrupt = (uint64_t) atoll (tmp);
+		ai->corrupt = (int64_t) atoll (tmp);
 
 	tmp = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
 			"compact");
@@ -187,7 +237,7 @@ get_announce_info (struct MHD_Connection *conn)
 	tmp = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
 			"numwant");
 	if (tmp != NULL)
-		ai->numwant = (uint32_t) atoi (tmp);
+		ai->numwant = (int32_t) atoi (tmp);
 
 	tmp = MHD_lookup_connection_value (conn, MHD_GET_ARGUMENT_KIND,
 			"key");
@@ -219,7 +269,7 @@ parse_event (const char *event)
 
 #ifdef DEBUG
 static int
-get_argument (void *cls, enum MHD_ValueKind kind, const char *key,
+key_val_iterator (void *cls, enum MHD_ValueKind kind, const char *key,
 		const char *value)
 {
 	debug (LOG_DBG, "%s = %s\n", key, value);
@@ -238,15 +288,15 @@ print_announce_info (announce_info_t *ai)
 			ai->peer_id[7]);
 	print_hex (ai->peer_id + 8);
 	debug (LOG_DBG, "ip: %s\n", ai->ip);
-	debug (LOG_DBG, "port: %hu\n", ai->port);
-	debug (LOG_DBG, "uploaded: %llu\n", ai->uploaded);
-	debug (LOG_DBG, "downloaded: %llu\n", ai->downloaded);
-	debug (LOG_DBG, "left: %llu\n", ai->left);
-	debug (LOG_DBG, "corrupt: %llu\n", ai->corrupt);
-	debug (LOG_DBG, "compat: %hhu\n", ai->compact);
-	debug (LOG_DBG, "no_peer_id: %hhu\n", ai->no_peer_id);
-	debug (LOG_DBG, "event: %hhu\n", ai->event);
-	debug (LOG_DBG, "numwant: %u\n", ai->numwant);
+	debug (LOG_DBG, "port: %" PRIu16" \n", ai->port);
+	debug (LOG_DBG, "uploaded: %" PRId64 "\n", ai->uploaded);
+	debug (LOG_DBG, "downloaded: %" PRId64 "\n", ai->downloaded);
+	debug (LOG_DBG, "left: %" PRId64 "\n", ai->left);
+	debug (LOG_DBG, "corrupt: %" PRId64 "\n", ai->corrupt);
+	debug (LOG_DBG, "compat: %" PRIu8 "\n", ai->compact);
+	debug (LOG_DBG, "no_peer_id: %" PRIu8 "\n", ai->no_peer_id);
+	debug (LOG_DBG, "event: %" PRIu8 "\n", ai->event);
+	debug (LOG_DBG, "numwant: %" PRId32 "\n", ai->numwant);
 	debug (LOG_DBG, "key: %s\n", ai->key);
 	debug (LOG_DBG, "tracker_id: %s\n", ai->tracker_id);
 

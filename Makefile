@@ -7,7 +7,7 @@ LIBMICROHTTPD_LIBS=-lmicrohttpd
 MYSQL_CFLAGS=-DBIG_JOINS=1 -DUNIV_LINUX -fno-strict-aliasing -I/usr/include/mysql
 MYSQL_LIBS=-Wl,-Bsymbolic-functions -rdynamic -L/usr/lib/mysql -lmysqlclient
 
-OBJS=http.o main.o sql.o
+OBJS=http.o main.o sql.o tracker.o
 TARGET=tmst
 
 # Enable debugging.
